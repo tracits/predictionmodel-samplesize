@@ -13,4 +13,5 @@ FROM
 	NTDB_adam.201X_ed E
 	LEFT JOIN NTDB_adam.201X_discharge D ON E.INC_KEY = D.INC_KEY
 	LEFT JOIN NTDB_adam.201X_vitals VED ON E.INC_KEY = VED.INC_KEY AND VED.VSTYPE = 'ED'
-WHERE E.SIGNSOFLIFE !='Arrived with NO signs of life'
+#Exclude
+WHERE NOT (E.SIGNSOFLIFE ='Arrived with NO signs of life' OR VED.SBP < 0 OR VED.PULSE < 0 or VED.RR < 0 or VED.GCSTOT < 0)
