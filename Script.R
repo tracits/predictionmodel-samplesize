@@ -1,41 +1,39 @@
 library('dbConnect')
 #Initialize
+setwd("/home/adam/Desktop/source/repos/predictionmodel-samplesize")
 source(".sshconfig.R")
 source("R/MySQLFunctions.R")
 source("R/CreateSubSample.R")
 source("R/CompareModels.R")
+## Settings
 
-RunStudy <- function() {
-    ## Settings
+## Note that it is the number of events in datasetB that should vary between 1
+## and 1000, but that the outcome prevalence should be the same in datasetC and
+## datasetB. So if the prevelance is 0.02, and the number of events is 1, then
+## the number of patients in datasetB should be 50, because 1/0.02=50.
 
-    ## Note that it is the number of events in datasetB that should vary between 1
-    ## and 1000, but that the outcome prevalence should be the same in datasetC and
-    ## datasetB. So if the prevelance is 0.02, and the number of events is 1, then
-    ## the number of patients in datasetB should be 50, because 1/0.02=50.
+## The number of events in datasetA and C should always be 200, and the number
+## of non-events should vary depending on the outcome prevalence
+numberofevents <- 200
+prevalenceinterval <- c(0.02, 0.05, 0.10)
 
-    ## The number of events in datasetA and C should always be 200, and the number
-    ## of non-events should vary depending on the outcome prevalence
-    numberofevents <- 200
-    prevalenceinterval = c(0.02, 0.05, 0.10)
+#Get Datasets
+print("Get Datasets")
+datasetA <- ImportMangroveMySQL(mysql.server.name, mysql.server.port, mysql.database, mysql.username, mysql.password, mysql.Mangrove.table = '2012_summary')
+datasetB <- ImportMangroveMySQL(mysql.server.name, mysql.server.port, mysql.database, mysql.username, mysql.password, mysql.Mangrove.table = '2013_summary')
+datasetC <- ImportMangroveMySQL(mysql.server.name, mysql.server.port, mysql.database, mysql.username, mysql.password, mysql.Mangrove.table = '2014_summary')
 
-    #Get Datasets
-    print("Get Datasets")
-    datasetA <- ImportMangroveMySQL(mysql.server.name, mysql.server.port, mysql.database, mysql.username, mysql.password, mysql.Mangrove.table = '2012_summary')
-    datasetB <- ImportMangroveMySQL(mysql.server.name, mysql.server.port, mysql.database, mysql.username, mysql.password, mysql.Mangrove.table = '2013_summary')
-    datasetC <- ImportMangroveMySQL(mysql.server.name, mysql.server.port, mysql.database, mysql.username, mysql.password, mysql.Mangrove.table = '2014_summary')
-    loopCount <- 0
-
-    executionID <- format(Sys.time(), "%Y%m%d%H%M%OS")
+executionID <- format(Sys.time(), "%Y%m%d%H%M%OS")
+allprevalences <- data.frame(t(expand.grid(prevalenceinterval, prevalenceinterval)))
+RunStudy <- function(numberofupdatingevents,loopCount) {
     #Start loop number of updating events (1-1000) changes with each loop
-    for (numberofupdatingevents in c(1:1000)) {
+    #for (numberofupdatingevents in c(1:1)) {
         #Test with only 200
         gc
         #Start loop confindence (0.02, 0.05, 0.10) changes with each loop. Note that the
         #outcome prevelance should always be the same in datasetB and datasetC
 
-        for (prevalenceArr in data.frame(t(expand.grid(prevalenceinterval, prevalenceinterval)))) {
-            loopCount <- loopCount + 1
-            print(loopCount)
+        for (prevalenceArr in allprevalences) {
             developmentprevalence <- prevalenceArr[1]
             updatingvalidationprevalence <- prevalenceArr[2]
 
@@ -87,9 +85,27 @@ RunStudy <- function() {
             #cm <- CompareModels('')
 
             StoreLoopData(executionID, loopCount, developmentprevalence, updatingvalidationprevalence, numberofdevelopmentnonevents, numberofvalidationnonevents, numberofupdatingnonevents, modelMIntercept, modelMSBP, modelMPULSE, modelMRR, modelMGCSTOT, modelUMIntercept, 0)
+            print(loopCount)
         }
     }
+#}
+
+library(doParallel)
+library(foreach)
+
+myCluster <- makeCluster(detectCores(), type = "FORK") # why "FORK"?
+registerDoParallel(myCluster)
+
+init <- Sys.time()
+
+print("Loop starting")
+loopCount <- 0
+r <-foreach(s=rep(c(1:1000),100), .combine=c) %dopar% {
+  loopCount = loopCount + 1
+  RunStudy(s,loopCount)
 }
-library(compiler)
-cnoise <- cmpfun(RunStudy)
-system.time(cnoise())
+
+a <- Sys.time() - init
+print(a)
+stopCluster(myCluster)
+
