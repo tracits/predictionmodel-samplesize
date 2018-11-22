@@ -1,6 +1,6 @@
 library('dbConnect')
 #Initialize
-source(".sshconfig.R")
+source("../.sshconfig.R")
 source("R/MySQLFunctions.R")
 source("R/CreateSubSample.R")
 source("R/CompareModels.R")
@@ -29,7 +29,7 @@ RunStudy <- function() {
     #Start loop number of updating events (1-1000) changes with each loop
     for (numberofupdatingevents in c(1:1000)) {
         #Test with only 200
-        gc
+        gc()
         #Start loop confindence (0.02, 0.05, 0.10) changes with each loop. Note that the
         #outcome prevelance should always be the same in datasetB and datasetC
 
@@ -52,23 +52,11 @@ RunStudy <- function() {
             #get validation data (DatasetC) and pick sample 
             sample.dataset.C <- CreateSubSample(datasetC, numberofevents, numberofvalidationnonevents)
 
-            #compare results
-            resA <- predict(modelM, sample.dataset.C, type = 'response')
-            resA
-            resA <- predict(modelM, sample.dataset.A, type = 'response')
-            resA
-
-            confmatrixA <- table(Actual_value = sample.dataset.A$Event, Predicted_value = resA > 0.5)
-            confmatrixA
-
-            #modelMres <- (confmatrixA[[1, 1]] + confmatrixA[[2, 2]]) / sum(confmatrixA)
-            #modelMres
-
             #Get updating data (Dataset B), pick samples
             sample.dataset.B <- CreateSubSample(datasetB, numberofupdatingevents, numberofupdatingnonevents)
 
-            #update model
-            sample.dataset.B$p <- predict(modelM, newdata = sample.dataset.B, type = 'response')
+            # Update model
+            sample.dataset.B$p <- predict(modelM, newdata = sample.dataset.B)
             modelUM <- glm(Event ~ p, data = sample.dataset.B)
 
             modelMIntercept <- coef(modelM)["(Intercept)"]
@@ -80,11 +68,17 @@ RunStudy <- function() {
             modelUMIntercept <- coef(modelUM)["(Intercept)"]
             modelUMP <- coef(modelUM)["p"]
 
-            eVal <- exp(modelMIntercept + modelUMIntercept + modelUMP * (modelMSBP * 1 + modelMPULSE * 1 + modelMRR * 1 + modelMGCSTOT * 1))
-            pVal = eVal / (eVal - 1)
+            # Use both M and UM to predict in validation sample
+            sample.dataset.C$Mlp <- with(sample.dataset.C, modelMIntercept + modelMSBP * SBP + modelMPULSE * PULSE + modelMRR * RR + modelMGCSTOT * GCSTOT)
+            # Convert to probability
+            sample.dataset.C$Mp <- 1/(1 + exp(-sample.dataset.C$Mlp))
+            
+            # Repeat with UM
+            sample.dataset.C$UMlp <- with(sample.dataset.C, modelMIntercept + modelUMIntercept + modelUMP * (modelMSBP * SBP + modelMPULSE * PULSE + modelMRR * RR + modelMGCSTOT * GCSTOT))
+            sample.dataset.C$UMp <- 1/(1 + exp(-sample.dataset.C$UMlp))
 
             #compare results from both models
-            #cm <- CompareModels('')
+            #cm <- CompareModels(sample.dataset.C$UMp, sample.dataset.C$Up)
 
             StoreLoopData(executionID, loopCount, developmentprevalence, updatingvalidationprevalence, numberofdevelopmentnonevents, numberofvalidationnonevents, numberofupdatingnonevents, modelMIntercept, modelMSBP, modelMPULSE, modelMRR, modelMGCSTOT, modelUMIntercept, 0)
         }
