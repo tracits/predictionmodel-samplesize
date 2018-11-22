@@ -26,69 +26,59 @@ datasetC <- ImportMangroveMySQL(mysql.server.name, mysql.server.port, mysql.data
 executionID <- format(Sys.time(), "%Y%m%d%H%M%OS")
 allprevalences <- data.frame(t(expand.grid(prevalenceinterval, prevalenceinterval)))
 RunStudy <- function(numberofupdatingevents,loopCount) {
-    #Start loop number of updating events (1-1000) changes with each loop
-    #for (numberofupdatingevents in c(1:1)) {
-        #Test with only 200
-        gc
-        #Start loop confindence (0.02, 0.05, 0.10) changes with each loop. Note that the
-        #outcome prevelance should always be the same in datasetB and datasetC
+    gc()
+    #Start loop confindence (0.02, 0.05, 0.10) changes with each loop. Note that the
+    #outcome prevelance should always be the same in datasetB and datasetC
 
-        for (prevalenceArr in allprevalences) {
-            developmentprevalence <- prevalenceArr[1]
-            updatingvalidationprevalence <- prevalenceArr[2]
+    for (prevalenceArr in allprevalences) {
+        developmentprevalence <- prevalenceArr[1]
+        updatingvalidationprevalence <- prevalenceArr[2]
 
-            ## Now define the number of non-events
-            numberofdevelopmentnonevents <- ceiling((numberofevents / developmentprevalence) - numberofevents)
-            numberofvalidationnonevents <- ceiling((numberofevents / updatingvalidationprevalence) - numberofevents)
-            numberofupdatingnonevents <- ceiling((numberofupdatingevents / updatingvalidationprevalence) - numberofupdatingevents)
+        ## Now define the number of non-events
+        numberofdevelopmentnonevents <- ceiling((numberofevents / developmentprevalence) - numberofevents)
+        numberofvalidationnonevents <- ceiling((numberofevents / updatingvalidationprevalence) - numberofevents)
+        numberofupdatingnonevents <- ceiling((numberofupdatingevents / updatingvalidationprevalence) - numberofupdatingevents)
 
-            #Get developing data (datasetA), get events and non-events, choose sample size and join together
-            sample.dataset.A <- CreateSubSample(datasetA, numberofevents, numberofdevelopmentnonevents)
-            #create model
-            modelM <- glm(Event ~ SBP + PULSE + RR + GCSTOT, data = sample.dataset.A, family = 'binomial')
+        #Get developing data (datasetA), get events and non-events, choose sample size and join together
+        sample.dataset.A <- CreateSubSample(datasetA, numberofevents, numberofdevelopmentnonevents)
+        #create model
+        modelM <- glm(Event ~ SBP + PULSE + RR + GCSTOT, data = sample.dataset.A, family = 'binomial')
 
-            #get validation data (DatasetC) and pick sample 
-            sample.dataset.C <- CreateSubSample(datasetC, numberofevents, numberofvalidationnonevents)
+        #get validation data (DatasetC) and pick sample 
+        sample.dataset.C <- CreateSubSample(datasetC, numberofevents, numberofvalidationnonevents)
 
-            #compare results
-            resA <- predict(modelM, sample.dataset.C, type = 'response')
-            resA
-            resA <- predict(modelM, sample.dataset.A, type = 'response')
-            resA
+        #Get updating data (Dataset B), pick samples
+        sample.dataset.B <- CreateSubSample(datasetB, numberofupdatingevents, numberofupdatingnonevents)
 
-            confmatrixA <- table(Actual_value = sample.dataset.A$Event, Predicted_value = resA > 0.5)
-            confmatrixA
+        # Update model
+        sample.dataset.B$p <- predict(modelM, newdata = sample.dataset.B)
+        modelUM <- glm(Event ~ p, data = sample.dataset.B)
 
-            #modelMres <- (confmatrixA[[1, 1]] + confmatrixA[[2, 2]]) / sum(confmatrixA)
-            #modelMres
+        modelMIntercept <- coef(modelM)["(Intercept)"]
+        modelMSBP <- coef(modelM)["SBP"]
+        modelMPULSE <- coef(modelM)["PULSE"]
+        modelMRR <- coef(modelM)["RR"]
+        modelMGCSTOT <- coef(modelM)["GCSTOT"]
 
-            #Get updating data (Dataset B), pick samples
-            sample.dataset.B <- CreateSubSample(datasetB, numberofupdatingevents, numberofupdatingnonevents)
+        modelUMIntercept <- coef(modelUM)["(Intercept)"]
+        modelUMP <- coef(modelUM)["p"]
 
-            #update model
-            sample.dataset.B$p <- predict(modelM, newdata = sample.dataset.B, type = 'response')
-            modelUM <- glm(Event ~ p, data = sample.dataset.B)
+        # Use both M and UM to predict in validation sample
+        sample.dataset.C$Mlp <- with(sample.dataset.C, modelMIntercept + modelMSBP * SBP + modelMPULSE * PULSE + modelMRR * RR + modelMGCSTOT * GCSTOT)
+        # Convert to probability
+        sample.dataset.C$Mp <- 1/(1 + exp(-sample.dataset.C$Mlp))
+        
+        # Repeat with UM
+        sample.dataset.C$UMlp <- with(sample.dataset.C, modelMIntercept + modelUMIntercept + modelUMP * (modelMSBP * SBP + modelMPULSE * PULSE + modelMRR * RR + modelMGCSTOT * GCSTOT))
+        sample.dataset.C$UMp <- 1/(1 + exp(-sample.dataset.C$UMlp))
 
-            modelMIntercept <- coef(modelM)["(Intercept)"]
-            modelMSBP <- coef(modelM)["SBP"]
-            modelMPULSE <- coef(modelM)["PULSE"]
-            modelMRR <- coef(modelM)["RR"]
-            modelMGCSTOT <- coef(modelM)["GCSTOT"]
+        #compare results from both models
+        #cm <- CompareModels(sample.dataset.C$UMp, sample.dataset.C$Up)
 
-            modelUMIntercept <- coef(modelUM)["(Intercept)"]
-            modelUMP <- coef(modelUM)["p"]
-
-            eVal <- exp(modelMIntercept + modelUMIntercept + modelUMP * (modelMSBP * 1 + modelMPULSE * 1 + modelMRR * 1 + modelMGCSTOT * 1))
-            pVal = eVal / (eVal - 1)
-
-            #compare results from both models
-            #cm <- CompareModels('')
-
-            StoreLoopData(executionID, loopCount, developmentprevalence, updatingvalidationprevalence, numberofdevelopmentnonevents, numberofvalidationnonevents, numberofupdatingnonevents, modelMIntercept, modelMSBP, modelMPULSE, modelMRR, modelMGCSTOT, modelUMIntercept, 0)
-            print(loopCount)
-        }
+        StoreLoopData(executionID, loopCount, developmentprevalence, updatingvalidationprevalence, numberofdevelopmentnonevents, numberofvalidationnonevents, numberofupdatingnonevents, modelMIntercept, modelMSBP, modelMPULSE, modelMRR, modelMGCSTOT, modelUMIntercept, 0)
+        print(loopCount)
     }
-#}
+}
 
 library(doParallel)
 library(foreach)
@@ -100,7 +90,11 @@ init <- Sys.time()
 
 print("Loop starting")
 loopCount <- 0
-r <-foreach(s=rep(c(1:1000),100), .combine=c) %dopar% {
+
+#Start loop number of updating events (1-1000) changes with each loop
+updatingevents <- c(1:1000)
+repeattimesforconfidence <- 1 #should be 1000 times
+r <-foreach(s=rep(updatingevents,repeattimesforconfidence), .combine=c) %dopar% {
   loopCount = loopCount + 1
   RunStudy(s,loopCount)
 }
