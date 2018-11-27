@@ -1,10 +1,13 @@
 library('dbConnect')
+library(doParallel)
+library(foreach)
 #Initialize
 setwd("/home/adam/Desktop/source/repos/predictionmodel-samplesize")
 source(".sshconfig.R")
 source("R/MySQLFunctions.R")
 source("R/CreateSubSample.R")
 source("R/CompareModels.R")
+
 ## Settings
 
 ## Note that it is the number of events in datasetB that should vary between 1
@@ -27,6 +30,7 @@ executionID <- format(Sys.time(), "%Y%m%d%H%M%OS")
 allprevalences <- data.frame(t(expand.grid(prevalenceinterval, prevalenceinterval)))
 RunStudy <- function(numberofupdatingevents,loopCount) {
     gc()
+
     #Start loop confindence (0.02, 0.05, 0.10) changes with each loop. Note that the
     #outcome prevelance should always be the same in datasetB and datasetC
 
@@ -78,10 +82,10 @@ RunStudy <- function(numberofupdatingevents,loopCount) {
         StoreLoopData(executionID, loopCount, developmentprevalence, updatingvalidationprevalence, numberofdevelopmentnonevents, numberofvalidationnonevents, numberofupdatingnonevents, modelMIntercept, modelMSBP, modelMPULSE, modelMRR, modelMGCSTOT, modelUMIntercept, 0)
         print(loopCount)
     }
+  return(1)
 }
 
-library(doParallel)
-library(foreach)
+print("Starting to use multple cores")
 
 myCluster <- makeCluster(detectCores(), type = "FORK") # why "FORK"?
 registerDoParallel(myCluster)
@@ -102,4 +106,5 @@ r <-foreach(s=rep(updatingevents,repeattimesforconfidence), .combine=c) %dopar% 
 a <- Sys.time() - init
 print(a)
 stopCluster(myCluster)
+print("Finished using multiple cores")
 
